@@ -1,71 +1,83 @@
-const socket = io("https://chaton-backend-p22z.onrender.com"); 
-// 👆 replace with YOUR render URL if different
+const socket = io("https://YOUR-BACKEND-URL"); 
+// example: https://chaton-backend.onrender.com
 
 let localStream;
 let peers = {};
-const room = "chaton-voice-room";
 
-async function joinVoice() {
-  localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+const joinBtn = document.getElementById("join");
+const usernameInput = document.getElementById("username");
 
-  socket.emit("join-voice", room);
+joinBtn.onclick = async () => {
+  if (!usernameInput.value) {
+    alert("Enter name");
+    return;
+  }
 
-  socket.on("voice-user-joined", async (id) => {
-    const pc = createPeer(id);
-    peers[id] = pc;
-
-    localStream.getTracks().forEach(track =>
-      pc.addTrack(track, localStream)
-    );
-
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-
-    socket.emit("voice-offer", { offer, to: id });
+  // 🔑 MOBILE SAFE mic request
+  localStream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true
+    }
   });
 
-  socket.on("voice-offer", async ({ offer, from }) => {
-    const pc = createPeer(from);
-    peers[from] = pc;
+  socket.emit("join", usernameInput.value);
+};
 
-    localStream.getTracks().forEach(track =>
-      pc.addTrack(track, localStream)
-    );
+socket.on("user-joined", async id => {
+  const pc = createPeer(id, true);
+  peers[id] = pc;
+});
 
-    await pc.setRemoteDescription(offer);
+socket.on("offer", async ({ from, offer }) => {
+  const pc = createPeer(from, false);
+  peers[from] = pc;
 
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
+  await pc.setRemoteDescription(offer);
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
 
-    socket.emit("voice-answer", { answer, to: from });
-  });
+  socket.emit("answer", { to: from, answer });
+});
 
-  socket.on("voice-answer", async ({ answer, from }) => {
-    await peers[from].setRemoteDescription(answer);
-  });
+socket.on("answer", async ({ from, answer }) => {
+  await peers[from].setRemoteDescription(answer);
+});
 
-  socket.on("voice-ice", ({ candidate, from }) => {
-    peers[from].addIceCandidate(candidate);
-  });
-}
+socket.on("ice", ({ from, candidate }) => {
+  peers[from]?.addIceCandidate(candidate);
+});
 
-function createPeer(id) {
+function createPeer(id, isCaller) {
   const pc = new RTCPeerConnection({
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
   });
 
-  pc.onicecandidate = (e) => {
+  localStream.getTracks().forEach(track =>
+    pc.addTrack(track, localStream)
+  );
+
+  pc.onicecandidate = e => {
     if (e.candidate) {
-      socket.emit("voice-ice", {
-        candidate: e.candidate,
-        to: id
-      });
+      socket.emit("ice", { to: id, candidate: e.candidate });
     }
   };
 
-  pc.ontrack = (e) => {
-    document.getElementById("remoteAudio").srcObject = e.streams[0];
+  pc.ontrack = e => {
+    const audio = document.createElement("audio");
+    audio.srcObject = e.streams[0];
+    audio.autoplay = true;
+    audio.playsInline = true;
+    document.body.appendChild(audio);
   };
+
+  if (isCaller) {
+    pc.createOffer().then(offer => {
+      pc.setLocalDescription(offer);
+      socket.emit("offer", { to: id, offer });
+    });
+  }
 
   return pc;
 }

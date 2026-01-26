@@ -1,14 +1,16 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8">
   <title>ChatON Voice</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
+
 <body>
-  <h2>🔥 ChatON Voice Call</h2>
+  <h2>🔥 ChatON Voice</h2>
 
-  <button onclick="joinVoice()">🎧 Join Voice Call</button>
-
-  <audio id="remoteAudio" autoplay></audio>
+  <input id="username" placeholder="Your name" />
+  <button id="join">Join Voice</button>
 
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script src="app.js"></script>
