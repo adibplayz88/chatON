@@ -2,15 +2,36 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>ChatON Voice</title>
+  <title>ChatON</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
-  <h2>🔥 ChatON Voice</h2>
+  <div class="container">
 
-  <input id="username" placeholder="Your name" />
-  <button id="join">Join Voice</button>
+    <header>🔥 ChatON</header>
+
+    <div class="join-box">
+      <input id="username" placeholder="Username">
+      <button id="join">Join</button>
+    </div>
+
+    <div class="users">
+      <h3>👥 In Call</h3>
+      <ul id="users"></ul>
+    </div>
+
+    <div class="chat">
+      <div id="chat" class="messages"></div>
+
+      <div class="send-box">
+        <input id="msg" placeholder="Message">
+        <button id="send">Send</button>
+      </div>
+    </div>
+
+  </div>
 
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script src="app.js"></script>

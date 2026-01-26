@@ -6,34 +6,45 @@ require("dotenv").config();
 const app = express();
 const server = http.createServer(app);
 
-// ✅ Socket.io
 const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
+  cors: { origin: "*" }
 });
 
-// ✅ Health check
+let users = {}; // socket.id -> username
+
 app.get("/", (req, res) => {
   res.send("🔥 ChatON backend is running");
 });
 
-// ================= SOCKET LOGIC =================
-
 io.on("connection", socket => {
-  console.log("✅ User connected:", socket.id);
+  console.log("✅ Connected:", socket.id);
 
-  // user joins
+  // ===== JOIN =====
   socket.on("join", username => {
-    socket.username = username;
-    console.log(`👤 ${username} joined`);
+    // ❌ block duplicate usernames
+    if (Object.values(users).includes(username)) {
+      socket.emit("join-error", "Username already in use");
+      return;
+    }
 
-    // notify others
+    users[socket.id] = username;
+    socket.username = username;
+
+    io.emit("user-list", Object.values(users));
     socket.broadcast.emit("user-joined", socket.id);
+
+    console.log(`👤 ${username} joined`);
   });
 
-  // WebRTC offer
+  // ===== CHAT =====
+  socket.on("chat-message", text => {
+    io.emit("chat-message", {
+      user: socket.username,
+      text
+    });
+  });
+
+  // ===== WEBRTC =====
   socket.on("offer", data => {
     io.to(data.to).emit("offer", {
       from: socket.id,
@@ -41,7 +52,6 @@ io.on("connection", socket => {
     });
   });
 
-  // WebRTC answer
   socket.on("answer", data => {
     io.to(data.to).emit("answer", {
       from: socket.id,
@@ -49,7 +59,6 @@ io.on("connection", socket => {
     });
   });
 
-  // ICE candidate
   socket.on("ice", data => {
     io.to(data.to).emit("ice", {
       from: socket.id,
@@ -57,15 +66,15 @@ io.on("connection", socket => {
     });
   });
 
+  // ===== DISCONNECT =====
   socket.on("disconnect", () => {
-    console.log("❌ User disconnected:", socket.id);
+    delete users[socket.id];
+    io.emit("user-list", Object.values(users));
+    console.log("❌ Disconnected:", socket.id);
   });
 });
 
-// ================= SERVER START =================
-
 const PORT = process.env.PORT || 3000;
-
 server.listen(PORT, () => {
   console.log(`🔥 ChatON backend running on port ${PORT}`);
 });

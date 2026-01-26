@@ -1,30 +1,47 @@
-const socket = io("https://YOUR-BACKEND-URL"); 
-// example: https://chaton-backend.onrender.com
+const socket = io("https://YOUR-BACKEND-URL");
 
 let localStream;
 let peers = {};
 
 const joinBtn = document.getElementById("join");
-const usernameInput = document.getElementById("username");
+const sendBtn = document.getElementById("send");
 
 joinBtn.onclick = async () => {
-  if (!usernameInput.value) {
-    alert("Enter name");
-    return;
-  }
+  const username = document.getElementById("username").value;
+  if (!username) return alert("Enter username");
 
-  // 🔑 MOBILE SAFE mic request
-  localStream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true
-    }
-  });
-
-  socket.emit("join", usernameInput.value);
+  localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  socket.emit("join", username);
 };
 
+socket.on("join-error", msg => {
+  alert(msg);
+});
+
+socket.on("user-list", users => {
+  const ul = document.getElementById("users");
+  ul.innerHTML = "";
+  users.forEach(u => {
+    const li = document.createElement("li");
+    li.innerText = u;
+    ul.appendChild(li);
+  });
+});
+
+// ===== CHAT =====
+sendBtn.onclick = () => {
+  const msg = document.getElementById("msg").value;
+  socket.emit("chat-message", msg);
+  document.getElementById("msg").value = "";
+};
+
+socket.on("chat-message", data => {
+  const chat = document.getElementById("chat");
+  chat.innerHTML += `<b>${data.user}:</b> ${data.text}<br>`;
+  chat.scrollTop = chat.scrollHeight;
+});
+
+// ===== WEBRTC =====
 socket.on("user-joined", async id => {
   const pc = createPeer(id, true);
   peers[id] = pc;
@@ -54,28 +71,24 @@ function createPeer(id, isCaller) {
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
   });
 
-  localStream.getTracks().forEach(track =>
-    pc.addTrack(track, localStream)
-  );
+  localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
 
   pc.onicecandidate = e => {
-    if (e.candidate) {
+    if (e.candidate)
       socket.emit("ice", { to: id, candidate: e.candidate });
-    }
   };
 
   pc.ontrack = e => {
     const audio = document.createElement("audio");
     audio.srcObject = e.streams[0];
     audio.autoplay = true;
-    audio.playsInline = true;
     document.body.appendChild(audio);
   };
 
   if (isCaller) {
-    pc.createOffer().then(offer => {
-      pc.setLocalDescription(offer);
-      socket.emit("offer", { to: id, offer });
+    pc.createOffer().then(o => {
+      pc.setLocalDescription(o);
+      socket.emit("offer", { to: id, offer: o });
     });
   }
 
