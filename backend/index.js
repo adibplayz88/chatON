@@ -1,81 +1,61 @@
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
+require("dotenv").config();
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
 
-app.use(express.static("frontend"));
-
-app.get("/", (req, res) => {
-  res.send("🔥 ChatON backend running");
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+  },
 });
 
-app.use(express.static("frontend"));
+app.get("/", (req, res) => {
+  res.send("🔥 ChatON backend is running");
+});
 
-const users = {};
+io.on("connection", (socket) => {
+  console.log("✅ User connected:", socket.id);
 
-function makeCode(name) {
-  return name + "#" + Math.floor(1000 + Math.random() * 9000);
-}
+  let user = "";
 
-io.on("connection", socket => {
-  console.log("User connected:", socket.id);
-
-  socket.on("join", name => {
-    const code = makeCode(name);
-    users[socket.id] = { name, code, room: null };
-    socket.emit("my-code", code);
+  // ---------- CHAT ----------
+  socket.on("join", (username) => {
+    user = username;
+    console.log("👤", username, "joined");
   });
 
-  socket.on("add-friend", friendCode => {
-    const me = users[socket.id];
-    if (!me) return;
-
-    const friendId = Object.keys(users).find(
-      id => users[id].code === friendCode
-    );
-
-    if (!friendId) {
-      socket.emit("error-msg", "Friend not found");
-      return;
-    }
-
-    const room = `room-${socket.id}-${friendId}`;
-
-    users[socket.id].room = room;
-    users[friendId].room = room;
-
-    socket.join(room);
-    io.to(friendId).socketsJoin(room);
-
-    io.to(room).emit("friend-connected", {
-      a: me.name,
-      b: users[friendId].name
-    });
+  socket.on("message", (text) => {
+    io.emit("message", { user, text });
   });
 
-  socket.on("private-message", text => {
-    const user = users[socket.id];
-    if (!user || !user.room) return;
+  // ---------- GROUP VOICE CALL ----------
+  socket.on("join-call", (roomId) => {
+    socket.join(roomId);
+    socket.to(roomId).emit("user-joined", socket.id);
+  });
 
-    io.to(user.room).emit("private-message", {
-      user: user.name,
-      text
-    });
+  socket.on("offer", ({ offer, roomId }) => {
+    socket.to(roomId).emit("offer", { offer, from: socket.id });
+  });
+
+  socket.on("answer", ({ answer, to }) => {
+    socket.to(to).emit("answer", { answer, from: socket.id });
+  });
+
+  socket.on("ice-candidate", ({ candidate, to }) => {
+    socket.to(to).emit("ice-candidate", { candidate, from: socket.id });
   });
 
   socket.on("disconnect", () => {
-    delete users[socket.id];
+    console.log("❌ User disconnected:", socket.id);
   });
 });
 
-server.listen(3000, () => {
-  console.log("ChatON running on 3000");
-});
+// ✅ ONLY ONE LISTEN — THIS IS THE LAW
 const PORT = process.env.PORT || 3000;
-
 server.listen(PORT, () => {
   console.log("🔥 ChatON backend running on port " + PORT);
 });
