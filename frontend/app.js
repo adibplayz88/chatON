@@ -1,92 +1,71 @@
-// CONNECT SOCKET
-const socket = io();
+const socket = io("https://chaton-backend-p22z.onrender.com"); 
+// 👆 replace with YOUR render URL if different
 
-// ELEMENTS
-const login = document.getElementById("login");
-const chat = document.getElementById("chat");
+let localStream;
+let peers = {};
+const room = "chaton-voice-room";
 
-const usernameInput = document.getElementById("username");
-const joinBtn = document.getElementById("joinBtn");
+async function joinVoice() {
+  localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-const myCodeEl = document.getElementById("myCode");
-const friendCodeInput = document.getElementById("friendCode");
-const addFriendBtn = document.getElementById("addFriend");
+  socket.emit("join-voice", room);
 
-const msgInput = document.getElementById("msg");
-const sendBtn = document.getElementById("send");
-const messages = document.getElementById("messages");
+  socket.on("voice-user-joined", async (id) => {
+    const pc = createPeer(id);
+    peers[id] = pc;
 
-let myName = "";
+    localStream.getTracks().forEach(track =>
+      pc.addTrack(track, localStream)
+    );
 
-// JOIN CHAT
-joinBtn.onclick = () => {
-  myName = usernameInput.value.trim();
-  if (!myName) {
-    alert("Enter your name");
-    return;
-  }
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
 
-  socket.emit("join", myName);
-  login.style.display = "none";
-  chat.style.display = "block";
-};
+    socket.emit("voice-offer", { offer, to: id });
+  });
 
-// RECEIVE MY FRIEND CODE
-socket.on("my-code", code => {
-  myCodeEl.textContent = code;
-});
+  socket.on("voice-offer", async ({ offer, from }) => {
+    const pc = createPeer(from);
+    peers[from] = pc;
 
-// ADD FRIEND
-addFriendBtn.onclick = () => {
-  const code = friendCodeInput.value.trim();
-  if (!code) {
-    alert("Enter friend code");
-    return;
-  }
+    localStream.getTracks().forEach(track =>
+      pc.addTrack(track, localStream)
+    );
 
-  socket.emit("add-friend", code);
-};
+    await pc.setRemoteDescription(offer);
 
-// FRIEND CONNECTED
-socket.on("friend-connected", data => {
-  const info = document.createElement("div");
-  info.style.textAlign = "center";
-  info.style.color = "#22c55e";
-  info.textContent = `Connected with ${data.b}`;
-  messages.appendChild(info);
-});
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
 
-// SEND PRIVATE MESSAGE
-sendBtn.onclick = () => {
-  const text = msgInput.value.trim();
-  if (!text) return;
+    socket.emit("voice-answer", { answer, to: from });
+  });
 
-  socket.emit("private-message", text);
-  msgInput.value = "";
-};
+  socket.on("voice-answer", async ({ answer, from }) => {
+    await peers[from].setRemoteDescription(answer);
+  });
 
-// ENTER KEY SEND
-msgInput.addEventListener("keypress", e => {
-  if (e.key === "Enter") sendBtn.click();
-});
+  socket.on("voice-ice", ({ candidate, from }) => {
+    peers[from].addIceCandidate(candidate);
+  });
+}
 
-// RECEIVE PRIVATE MESSAGE
-socket.on("private-message", data => {
-  const div = document.createElement("div");
-  div.classList.add("message");
+function createPeer(id) {
+  const pc = new RTCPeerConnection({
+    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+  });
 
-  if (data.user === myName) {
-    div.classList.add("me");
-    div.textContent = data.text;
-  } else {
-    div.textContent = `${data.user}: ${data.text}`;
-  }
+  pc.onicecandidate = (e) => {
+    if (e.candidate) {
+      socket.emit("voice-ice", {
+        candidate: e.candidate,
+        to: id
+      });
+    }
+  };
 
-  messages.appendChild(div);
-  messages.scrollTop = messages.scrollHeight;
-});
+  pc.ontrack = (e) => {
+    document.getElementById("remoteAudio").srcObject = e.streams[0];
+  };
 
-// ERROR MESSAGE
-socket.on("error-msg", msg => {
-  alert(msg);
-});
+  return pc;
+}

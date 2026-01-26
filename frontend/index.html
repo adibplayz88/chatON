@@ -1,38 +1,16 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>ChatON</title>
-  <link rel="stylesheet" href="style.css">
+  <title>ChatON Voice</title>
 </head>
 <body>
+  <h2>🔥 ChatON Voice Call</h2>
 
-<div id="app">
-  <div id="header">ChatON</div>
+  <button onclick="joinVoice()">🎧 Join Voice Call</button>
 
-  <div id="login">
-    <input id="username" placeholder="Your name" />
-    <button id="joinBtn">Join</button>
-  </div>
+  <audio id="remoteAudio" autoplay></audio>
 
-  <div id="chat" style="display:none">
-      <div id="friendBox">
-        <p>Your code: <span id="myCode"></span></p>
-        <input id="friendCode" placeholder="Friend code">
-        <button id="addFriend">Add Friend</button>
-      </div>
-    <div id="messages"></div>
-
-    <div id="inputArea">
-      <input id="msg" placeholder="Type a message..." />
-      <button id="send">Send</button>
-    </div>
-  </div>
-</div>
-
-<script src="/socket.io/socket.io.js"></script>
-<script src="app.js"></script>
-
-<script src="/socket.io/socket.io.js"></script>
-<script src="app.js"></script>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
