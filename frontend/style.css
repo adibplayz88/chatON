@@ -144,3 +144,9 @@ header {
     height: 100vh;
   }
 }
+
+#mute {
+  background: orange;
+  color: black;
+  font-weight: bold;
+}

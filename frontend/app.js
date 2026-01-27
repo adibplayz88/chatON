@@ -1,114 +1,134 @@
-const socket = io("https://chaton-backend-p22z.onrender.com/");
+const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
+require("dotenv").config();
 
-let localStream;
-let peers = {};
+const app = express();
+const server = http.createServer(app);
 
-const joinBtn = document.getElementById("join");
-const leaveBtn = document.getElementById("leave");
-const sendBtn = document.getElementById("send");
-
-joinBtn.onclick = async () => {
-  const username = document.getElementById("username").value;
-  if (!username) return alert("Enter username");
-
-  localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  socket.emit("join", username);
-};
-
-leaveBtn.onclick = () => {
-  socket.disconnect();
-  location.reload(); // clean reset
-};
-
-socket.on("join-error", msg => {
-  alert(msg);
+const io = new Server(server, {
+  cors: { origin: "*" }
 });
 
-// ===== USER LIST =====
-socket.on("user-list", users => {
-  const ul = document.getElementById("users");
-  ul.innerHTML = "";
-  users.forEach(u => {
-    const li = document.createElement("li");
-    li.innerText = u + " 🎧";
-    ul.appendChild(li);
-  });
+// ================== DATA ==================
+let users = {};          // socket.id -> username
+let chatHistory = [];    // stored messages (RAM)
+
+// ================== ROUTE ==================
+app.get("/", (req, res) => {
+  res.send("🔥 ChatON backend is running");
 });
 
-// ===== CHAT =====
-sendBtn.onclick = () => {
-  const input = document.getElementById("msg");
-  const msg = input.value.trim();
-  if (!msg) return;
+// ================== SOCKET ==================
+io.on("connection", socket => {
+  console.log("✅ Connected:", socket.id);
 
-  socket.emit("chat-message", msg);
-  input.value = "";
-};
+  // -------- JOIN --------
+  socket.on("join", username => {
+    if (!username || username.trim() === "") {
+      socket.emit("join-error", "Invalid username");
+      return;
+    }
 
-socket.on("chat-message", data => {
-  addMessage(`<b>${data.user}:</b> ${data.text}`);
-});
+    if (Object.values(users).includes(username)) {
+      socket.emit("join-error", "Username already in use");
+      return;
+    }
 
-socket.on("system-message", msg => {
-  addMessage(`<i style="color:#94a3b8">${msg}</i>`);
-});
+    users[socket.id] = username;
+    socket.username = username;
 
-function addMessage(html) {
-  const chat = document.getElementById("chat");
-  chat.innerHTML += `<div class="msg">${html}</div>`;
-  chat.scrollTop = chat.scrollHeight;
-}
+    // Send chat history to new user
+    socket.emit("chat-history", chatHistory);
 
-// ===== WEBRTC =====
-socket.on("user-joined", id => {
-  const pc = createPeer(id, true);
-  peers[id] = pc;
-});
+    // Notify everyone
+    const joinMsg = {
+      type: "system",
+      text: `🟢 ${username} joined the call`
+    };
 
-socket.on("offer", async ({ from, offer }) => {
-  const pc = createPeer(from, false);
-  peers[from] = pc;
+    chatHistory.push(joinMsg);
+    io.emit("system-message", joinMsg.text);
+    io.emit("user-list", Object.values(users));
 
-  await pc.setRemoteDescription(offer);
-  const answer = await pc.createAnswer();
-  await pc.setLocalDescription(answer);
-
-  socket.emit("answer", { to: from, answer });
-});
-
-socket.on("answer", async ({ from, answer }) => {
-  await peers[from].setRemoteDescription(answer);
-});
-
-socket.on("ice", ({ from, candidate }) => {
-  peers[from]?.addIceCandidate(candidate);
-});
-
-function createPeer(id, isCaller) {
-  const pc = new RTCPeerConnection({
-    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+    console.log(`👤 ${username} joined`);
   });
 
-  localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+  // -------- CHAT --------
+  socket.on("chat-message", text => {
+    if (!socket.username) return;
 
-  pc.onicecandidate = e => {
-    if (e.candidate)
-      socket.emit("ice", { to: id, candidate: e.candidate });
-  };
+    const msg = {
+      type: "chat",
+      user: socket.username,
+      text,
+      time: Date.now()
+    };
 
-  pc.ontrack = e => {
-    const audio = document.createElement("audio");
-    audio.srcObject = e.streams[0];
-    audio.autoplay = true;
-    document.body.appendChild(audio);
-  };
+    chatHistory.push(msg);
 
-  if (isCaller) {
-    pc.createOffer().then(o => {
-      pc.setLocalDescription(o);
-      socket.emit("offer", { to: id, offer: o });
+    // Limit history (avoid RAM abuse)
+    if (chatHistory.length > 200) {
+      chatHistory.shift();
+    }
+
+    io.emit("chat-message", msg);
+  });
+
+  // -------- SPEAKING INDICATOR --------
+  socket.on("speaking", state => {
+    if (!socket.username) return;
+
+    io.emit("speaking", {
+      user: socket.username,
+      state // true / false
     });
-  }
+  });
 
-  return pc;
-}
+  // -------- WEBRTC SIGNALING --------
+  socket.on("offer", data => {
+    io.to(data.to).emit("offer", {
+      from: socket.id,
+      offer: data.offer
+    });
+  });
+
+  socket.on("answer", data => {
+    io.to(data.to).emit("answer", {
+      from: socket.id,
+      answer: data.answer
+    });
+  });
+
+  socket.on("ice", data => {
+    io.to(data.to).emit("ice", {
+      from: socket.id,
+      candidate: data.candidate
+    });
+  });
+
+  // -------- DISCONNECT --------
+  socket.on("disconnect", () => {
+    const username = users[socket.id];
+    delete users[socket.id];
+
+    if (username) {
+      const leaveMsg = {
+        type: "system",
+        text: `🔴 ${username} left the call`
+      };
+
+      chatHistory.push(leaveMsg);
+      io.emit("system-message", leaveMsg.text);
+      io.emit("user-list", Object.values(users));
+
+      console.log(`❌ ${username} left`);
+    }
+  });
+});
+
+// ================== START ==================
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`🔥 ChatON backend running on port ${PORT}`);
+});
