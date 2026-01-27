@@ -1,4 +1,4 @@
-const socket = io("https://YOUR-BACKEND-URL");
+const socket = io("https://chaton-backend-p22z.onrender.com/");
 
 let localStream;
 let peers = {};
