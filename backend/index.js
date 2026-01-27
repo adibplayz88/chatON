@@ -21,7 +21,6 @@ io.on("connection", socket => {
 
   // ===== JOIN =====
   socket.on("join", username => {
-    // ❌ block duplicate usernames
     if (Object.values(users).includes(username)) {
       socket.emit("join-error", "Username already in use");
       return;
@@ -30,10 +29,10 @@ io.on("connection", socket => {
     users[socket.id] = username;
     socket.username = username;
 
+    io.emit("system-message", `🟢 ${username} joined the call`);
     io.emit("user-list", Object.values(users));
-    socket.broadcast.emit("user-joined", socket.id);
 
-    console.log(`👤 ${username} joined`);
+    socket.broadcast.emit("user-joined", socket.id);
   });
 
   // ===== CHAT =====
@@ -66,10 +65,16 @@ io.on("connection", socket => {
     });
   });
 
-  // ===== DISCONNECT =====
+  // ===== LEAVE / DISCONNECT =====
   socket.on("disconnect", () => {
+    const name = users[socket.id];
     delete users[socket.id];
-    io.emit("user-list", Object.values(users));
+
+    if (name) {
+      io.emit("system-message", `🔴 ${name} left the call`);
+      io.emit("user-list", Object.values(users));
+    }
+
     console.log("❌ Disconnected:", socket.id);
   });
 });

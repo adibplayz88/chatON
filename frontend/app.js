@@ -4,6 +4,7 @@ let localStream;
 let peers = {};
 
 const joinBtn = document.getElementById("join");
+const leaveBtn = document.getElementById("leave");
 const sendBtn = document.getElementById("send");
 
 joinBtn.onclick = async () => {
@@ -14,35 +15,52 @@ joinBtn.onclick = async () => {
   socket.emit("join", username);
 };
 
+leaveBtn.onclick = () => {
+  socket.disconnect();
+  location.reload(); // clean reset
+};
+
 socket.on("join-error", msg => {
   alert(msg);
 });
 
+// ===== USER LIST =====
 socket.on("user-list", users => {
   const ul = document.getElementById("users");
   ul.innerHTML = "";
   users.forEach(u => {
     const li = document.createElement("li");
-    li.innerText = u;
+    li.innerText = u + " 🎧";
     ul.appendChild(li);
   });
 });
 
 // ===== CHAT =====
 sendBtn.onclick = () => {
-  const msg = document.getElementById("msg").value;
+  const input = document.getElementById("msg");
+  const msg = input.value.trim();
+  if (!msg) return;
+
   socket.emit("chat-message", msg);
-  document.getElementById("msg").value = "";
+  input.value = "";
 };
 
 socket.on("chat-message", data => {
-  const chat = document.getElementById("chat");
-  chat.innerHTML += `<b>${data.user}:</b> ${data.text}<br>`;
-  chat.scrollTop = chat.scrollHeight;
+  addMessage(`<b>${data.user}:</b> ${data.text}`);
 });
 
+socket.on("system-message", msg => {
+  addMessage(`<i style="color:#94a3b8">${msg}</i>`);
+});
+
+function addMessage(html) {
+  const chat = document.getElementById("chat");
+  chat.innerHTML += `<div class="msg">${html}</div>`;
+  chat.scrollTop = chat.scrollHeight;
+}
+
 // ===== WEBRTC =====
-socket.on("user-joined", async id => {
+socket.on("user-joined", id => {
   const pc = createPeer(id, true);
   peers[id] = pc;
 });
