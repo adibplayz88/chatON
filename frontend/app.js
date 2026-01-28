@@ -1,125 +1,74 @@
 const socket = io("https://chaton-backend-p22z.onrender.com");
 
 let joined = false;
-let username = "";
 let localStream;
-let muted = false;
-
 const peers = {};
 
-// ===== JOIN =====
 function join() {
-  username = document.getElementById("username").value.trim();
-  if (!username) return;
-
-  socket.emit("join", username);
+  const name = document.getElementById("username").value.trim();
+  if (!name) return;
+  socket.emit("join", name);
 }
 
 socket.on("join-error", msg => {
   document.getElementById("error").innerText = msg;
 });
 
-socket.on("user-list", list => {
-  document.getElementById("users").innerHTML =
-    "👥 Users: " + list.join(", ");
-});
-
-socket.on("system-message", text => {
-  addMessage("system", text);
-});
-
 socket.on("chat-history", history => {
   history.forEach(m => {
-    if (m.type === "system") addMessage("system", m.text);
-    if (m.type === "chat") addMessage(m.user, m.text);
+    if (m.type === "system") addSystem(m.text);
+    else addChat(m.user, m.text);
   });
+
   joined = true;
   document.getElementById("joinBox").hidden = true;
   document.getElementById("chatBox").hidden = false;
 });
 
-// ===== CHAT =====
-function sendMessage() {
-  if (!joined) return;
+socket.on("user-list", list => {
+  document.getElementById("users").innerText =
+    "👥 Users: " + list.join(", ");
+});
 
+socket.on("system-message", text => addSystem(text));
+socket.on("chat-message", msg => addChat(msg.user, msg.text));
+
+function send() {
+  if (!joined) return;
   const input = document.getElementById("msg");
   const text = input.value.trim();
   if (!text) return;
-
   socket.emit("chat-message", text);
   input.value = "";
 }
 
-socket.on("chat-message", msg => {
-  addMessage(msg.user, msg.text);
-});
-
-// ===== UI MESSAGE =====
-function addMessage(user, text) {
-  const box = document.getElementById("messages");
+function addChat(user, text) {
   const div = document.createElement("div");
-
-  if (user === "system") {
-    div.className = "system";
-    div.innerText = text;
-  } else {
-    div.innerHTML = `<b>${user}:</b> ${text}`;
-  }
-
-  box.appendChild(div);
-  box.scrollTop = box.scrollHeight;
+  div.innerHTML = `<b>${user}:</b> ${text}`;
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
 }
 
-// ===== VOICE =====
+function addSystem(text) {
+  const div = document.createElement("div");
+  div.className = "system";
+  div.innerText = text;
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+// ===== VOICE (BASIC, STABLE) =====
 async function startVoice() {
   localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-  socket.emit("speaking", true);
-
-  socket.on("user-joined", id => {
-    createPeer(id);
-  });
-}
-
-function createPeer(id) {
-  const pc = new RTCPeerConnection();
-
-  localStream.getTracks().forEach(track =>
-    pc.addTrack(track, localStream)
-  );
-
-  pc.onicecandidate = e => {
-    if (e.candidate) {
-      socket.emit("ice", { to: id, candidate: e.candidate });
-    }
-  };
-
-  pc.ontrack = e => {
-    const audio = document.createElement("audio");
-    audio.srcObject = e.streams[0];
-    audio.autoplay = true;
-    document.body.appendChild(audio);
-  };
-
-  pc.createOffer().then(offer => {
-    pc.setLocalDescription(offer);
-    socket.emit("offer", { to: id, offer });
-  });
-
-  peers[id] = pc;
 }
 
 socket.on("offer", async data => {
   const pc = new RTCPeerConnection();
-
-  localStream.getTracks().forEach(track =>
-    pc.addTrack(track, localStream)
-  );
+  localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
 
   pc.onicecandidate = e => {
-    if (e.candidate) {
+    if (e.candidate)
       socket.emit("ice", { to: data.from, candidate: e.candidate });
-    }
   };
 
   pc.ontrack = e => {
@@ -138,17 +87,9 @@ socket.on("offer", async data => {
 });
 
 socket.on("answer", data => {
-  peers[data.from].setRemoteDescription(data.answer);
+  peers[data.from]?.setRemoteDescription(data.answer);
 });
 
 socket.on("ice", data => {
-  peers[data.from].addIceCandidate(data.candidate);
+  peers[data.from]?.addIceCandidate(data.candidate);
 });
-
-// ===== MUTE =====
-function toggleMute() {
-  if (!localStream) return;
-
-  muted = !muted;
-  localStream.getAudioTracks()[0].enabled = !muted;
-}
